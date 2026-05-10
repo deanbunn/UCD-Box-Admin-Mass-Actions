@@ -4,7 +4,7 @@
 #>
 
 #Var for Mass Action
-$global:MassAction = "Not-Set";
+$global:MassAction = "Add-Memberships";
 
 #Custom Object for Box App Information
 $global:BoxAppInfo = new-object PSObject -Property (@{ client_id=""; client_secret=""; subject_id="";});
@@ -70,6 +70,97 @@ function Get-BoxAPIToken()
 
 #Var for Progress Indicator
 $nProgress = 0;
+
+#################################################
+# Mass Group Membership Adds
+#################################################
+
+if($MassAction -eq "Add-Memberships")
+{
+
+    #Var for Membership URL
+    $boxMembershipURL = $boxAPIBaseURL + "group_memberships";
+
+    #Hash Table for UCD Enterprise Box Users 
+    $htUEBU = @{};
+
+    #Array of Non-Enterprise Box Accounts
+    $arrNonEnterpriseBoxAcnts = @();
+
+    #Import UCD Box Users CSV
+    $csvUCDBoxUsrs = Import-CSV -Path "box_users_20260509.csv";
+
+    #Import Student Registration 
+    $csvUCDRegistration = Import-CSV -Path "box_group_ids_all_students.csv";
+
+    #Var for Report Name
+    [string]$rptName = "Non_Enterprise_Accounts_" + (Get-Date).ToString("yyyy-MM-dd-HH-mm-ss") + ".csv"; 
+
+    #Load Box User HashTable
+    foreach($ubu in $csvUCDBoxUsrs)
+    {
+
+        if([string]::IsNullOrEmpty($ubu.Box_Login) -eq $false -and [string]::IsNullOrEmpty($ubu.Box_ID) -eq $false -and $htUEBU.ContainsKey($ubu.Box_Login.ToLower()) -eq $false)
+        {
+            $htUEBU.Add($ubu.Box_Login.ToLower(),$ubu.Box_ID)
+        }
+
+    }#End of Box User HashTable Load
+
+
+    foreach($ucdReg in $csvUCDRegistration)
+    {
+
+        #Null Empty Checks on Required Values
+        if([string]::IsNullOrEmpty($ucdReg.email) -eq $false -and [string]::IsNullOrEmpty($ucdReg.boxgroupid) -eq $false)
+        {
+            
+            if($htUEBU.ContainsKey($ucdReg.email.ToString().ToLower()) -eq $true)
+            {
+
+                #Get\Check OAuth API Access Token from Box
+                Get-BoxAPIToken;
+
+                #Var for Header Authorization Bearer Key to Box
+                $headersBox = @{"Authorization"="Bearer " + $BoxAPITokenInfo.box_api_token};
+
+                $bxUsrID = $htUEBU[$ucdReg.email.ToString().ToLower()].ToString();
+                $bxGrpID = $ucdReg.boxgroupid.ToString();
+                $jsonPostBody = "{""user"":{""id"":""$bxUsrID""},""group"":{""id"":""$bxGrpID""}}";
+
+                #Make Post API call to Add Group Membership
+                Invoke-RestMethod -Uri $boxMembershipURL -Method Post -Headers $headersBox -Body $jsonPostBody -ContentType "application/json";
+    
+            }
+            else
+            {
+                $arrNonEnterpriseBoxAcnts += $ucdReg
+            }
+
+        }#End of Null\Empty Checks on Required Membership Creation Values
+
+    }#End of $csvUCDRegistration Foreach
+
+
+    <#
+        #Get\Check OAuth API Access Token from Box
+        Get-BoxAPIToken;
+
+        #Var for Header Authorization Bearer Key to Box
+        $headersBox = @{"Authorization"="Bearer " + $BoxAPITokenInfo.box_api_token};
+
+        $bxUsrID = "201321578";
+        $bxGrpID = "27511840300";
+        $jsonPostBody = "{""user"":{""id"":""$bxUsrID""},""group"":{""id"":""$bxGrpID""}}";
+
+        #Make Post API call to Add Group Membership
+        Invoke-RestMethod -Uri $boxMembershipURL -Method Post -Headers $headersBox -Body $jsonPostBody -ContentType "application/json";
+    #>
+
+    #Export Reporting Array to CSV
+    $arrNonEnterpriseBoxAcnts | Export-Csv -Path $rptName -NoTypeInformation;
+
+}#End of Add-Memberships
 
 #################################################
 # Mass Group Creation
